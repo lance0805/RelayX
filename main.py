@@ -21,7 +21,8 @@ def parse_args():
         help="Port to run the HTTP proxy server on (default: 8080)",
     )
     parser.add_argument(
-        "--host",
+        "-b",
+        "--bind",
         type=str,
         default="0.0.0.0",
         help="Host to run the HTTP proxy server on (default: 0.0.0.0)",
@@ -37,7 +38,7 @@ async def main():
     logger.info(f"Starting RelayX HTTP proxy server on port {args.port}")
 
     try:
-        server = HttpProxy(args.port, args.host)
+        server = HttpProxy(args.port, args.bind)
         await server.start()
     except KeyboardInterrupt:
         logger.info("Server shutdown requested")
