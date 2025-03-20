@@ -51,9 +51,6 @@ class RnetAddon:
         headers = dict(flow.request.headers)
         body = flow.request.content if flow.request.content else b""
 
-        if not self.proxy:
-            await self.initialize()
-
         while retry_count <= max_retries:
             try:
                 
@@ -176,7 +173,7 @@ class HttpProxy:
             autoUpdate=False,
             maxProxies=100,
             cachePeriod=24 * 60,
-            protocol="socks5",
+            protocol="http",
             cacheFolderPath=cache_folder_path,
         )
 
@@ -196,6 +193,7 @@ class HttpProxy:
 
             # Create and start threaded mitmproxy
             await self.proxy_interface.async_update()
+            await self.rnet_addon.initialize()
             self.proxy_thread = ThreadedMitmProxy(self.rnet_addon, **options)
 
             # Start proxy thread
