@@ -1,17 +1,15 @@
 # RelayX
 
-A flexible SOCKS5 proxy relay service built with Python and asyncio. RelayX starts a SOCKS5 server on a specified port and forwards traffic through SwiftShadow proxies.
+A flexible HTTP proxy relay service built with Python and asyncio. RelayX starts an HTTP proxy server on a specified port and forwards traffic through SwiftShadow proxies.
 
 ## Features
 
-- SOCKS5 server implementation
+- HTTP proxy server implementation
+- Integration with mitmproxy and rnet libraries for handling HTTP requests
 - Integration with SwiftShadow proxy rotation library
-- Support for multiple proxy sources:
-  - Free public proxies
-  - Proxies from a file
-  - Custom defined proxies
 - Automatic proxy rotation and failure handling
-- Configurable via YAML configuration file
+- Proxy list caching for improved performance
+- Support for all HTTP methods (GET, POST, PUT, DELETE, etc.)
 - Asynchronous architecture for high performance
 
 ## Installation
@@ -27,91 +25,66 @@ pip install -e .
 
 ## Quick Start
 
-1. Create a configuration file:
+1. Start the HTTP proxy server:
    ```bash
-   cp config.yml.example config.yml
+   python -m main -p 8080
    ```
 
-2. Edit the configuration file if needed (default uses free proxies from SwiftShadow)
+2. Configure your applications to use the HTTP proxy at `localhost:8080`
 
-3. Start the SOCKS5 server:
+3. Test the proxy connection:
    ```bash
-   python -m relayx.main -p 1080
+   python check.py
    ```
-
-4. Configure your applications to use the SOCKS5 proxy at `localhost:1080`
 
 ## Usage
 
 ```
-python -m relayx.main [-h] [-p PORT] [-c CONFIG]
+python -m main [-h] [-p PORT] [-b BIND] [-c CACHE_FOLDER]
 
 Options:
   -h, --help            Show this help message and exit
-  -p PORT, --port PORT  Port to run the SOCKS5 server on (default: 1080)
-  -c CONFIG, --config CONFIG
-                        Path to configuration file (default: config.yml)
+  -p PORT, --port PORT  Port to run the HTTP proxy server on (default: 8080)
+  -b BIND, --bind BIND  Host to run the HTTP proxy server on (default: 0.0.0.0)
+  -c CACHE_FOLDER, --cache-folder CACHE_FOLDER
+                        Path to the cache folder (default: /tmp/cache)
 ```
 
-## Configuration
+## Test Tool
 
-RelayX uses a YAML configuration file for SwiftShadow proxy settings. See `config.yml.example` for a complete example.
+RelayX provides a test script `check.py` to verify the proxy server functionality:
 
-### Example Configuration
+```
+python check.py [-h] [-H HOST] [-p PORT] [--verify-ssl]
 
-```yaml
-# SwiftShadow proxy configuration
-swiftshadow:
-  source: free  # Use free proxy sources
-  name: SwiftShadow Proxy
-  auto_rotate: true  # Automatically rotate proxies
-  rotate_on_fail: true  # Rotate on connection failures
-  max_failures: 3  # Maximum failures before rotating
-  timeout: 10  # Connection timeout in seconds
+Options:
+  -h, --help            Show this help message and exit
+  -H HOST, --host HOST  HTTP proxy server host (default: 127.0.0.1)
+  -p PORT, --port PORT  HTTP proxy server port (default: 8080)
+  --verify-ssl          Enable SSL verification (default: disabled)
 ```
 
-## Proxy Sources
+## Docker Deployment
 
-### Free Proxies
+RelayX provides Docker support. Use the following commands to build and run:
 
-Use free public proxies automatically sourced by SwiftShadow:
+```bash
+# Build Docker image
+docker build -t relayx .
 
-```yaml
-swiftshadow:
-  source: free  # Use free proxy sources
-  auto_rotate: true
-  rotate_on_fail: true
+# Run Docker container
+docker run -p 8080:8080 relayx
 ```
 
-### File-based Proxies
+## Proxy Implementation
 
-Load proxies from a text file:
+RelayX uses the following technologies:
 
-```yaml
-swiftshadow:
-  source: file
-  proxy_file: /path/to/proxies.txt  # Path to file with proxy list
-  auto_rotate: true
-```
+- **mitmproxy**: As the base HTTP proxy server, supporting TLS interception and HTTP/2
+- **rnet**: For sending HTTP requests
+- **SwiftShadow**: For managing and rotating proxies
 
-### Custom Proxies
-
-Define your own list of proxies:
-
-```yaml
-swiftshadow:
-  source: custom
-  proxies:
-    - protocol: http
-      host: proxy1.example.com
-      port: 8080
-      username: user1  # Optional
-      password: pass1  # Optional
-    - protocol: socks5
-      host: proxy2.example.com
-      port: 1080
-  auto_rotate: true
-```
+Each time a connection fails, the system automatically rotates to a new proxy, with up to 50 retries, ensuring high availability.
 
 ## License
 
