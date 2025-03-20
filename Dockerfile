@@ -22,4 +22,4 @@ EXPOSE 8080
 # Run the application
 ENTRYPOINT ["uv", "run", "main.py"]
 
-CMD ["--bind", "127.0.0.1"]
+CMD ["--bind", "0.0.0.0"]
