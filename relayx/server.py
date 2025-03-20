@@ -62,11 +62,6 @@ class RnetAddon:
         max_total_time = 300  # 2分钟总超时
 
         while retry_count <= max_retries:
-            # 检查客户端是否已断开连接
-            if flow.client_conn.closed:
-                logger.info(f"Client disconnected, aborting request to {url}")
-                return
-            
             try:
                 # 在重试循环中检查
                 if time.time() - start_time > max_total_time:
