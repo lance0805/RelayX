@@ -2,9 +2,9 @@ import asyncio
 import logging
 from pathlib import Path
 import threading
-from typing import Dict, Any, Optional, Self
+from typing import Any, Optional, Self
 
-from rnet import Client, Impersonate, Proxy
+from rnet import Client, Impersonate
 from mitmproxy import http
 from mitmproxy.addons import default_addons, script
 from mitmproxy.master import Master
@@ -13,6 +13,8 @@ from mitmproxy.options import Options
 from swiftshadow.classes import ProxyInterface
 
 logger = logging.getLogger("relayx.server")
+proxy_logger = logging.getLogger("mitmproxy.proxy.server")
+proxy_logger.setLevel(logging.WARNING)
 
 
 class RnetAddon:
