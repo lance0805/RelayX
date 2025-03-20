@@ -27,18 +27,15 @@ class RnetAddon:
         self.proxy_updated = False
         
     async def initialize(self):
-        """初始化时获取代理"""
         if self.proxy_interface and not self.proxy:
             self.proxy = self.proxy_interface.get()
-            logger.info(f"初始代理设置: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
+            logger.info(f"Proxy initialized: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
             self.proxy_updated = True
 
     async def _update_proxy(self, force=False):
-        """仅在需要时更新代理设置"""
         if self.proxy_interface and (force or not self.proxy):
-            # 只有在强制更新或代理未设置时才获取新代理
             self.proxy = self.proxy_interface.get()
-            logger.info(f"代理已更新: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
+            logger.info(f"Proxy updated: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
             self.proxy_updated = True
 
     async def request(self, flow: http.HTTPFlow) -> None:
@@ -54,24 +51,14 @@ class RnetAddon:
         headers = dict(flow.request.headers)
         body = flow.request.content if flow.request.content else b""
 
-        # 确保代理已经初始化
         if not self.proxy:
             await self.initialize()
 
         while retry_count <= max_retries:
             try:
-                # 不再每次尝试都更新代理
-                # 只在第一次或重试前检查代理已设置
                 
-                # Log current attempt information
-                if retry_count > 0:
-                    logger.info(f"重试 #{retry_count} 请求 {method} 到 {url}")
-                else:
-                    logger.info(f"RnetAddon: {method} 请求到 {url}")
-
                 # Configure proxy (if available)
                 proxy_url = f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
-                logger.info(f"使用代理 {proxy_url}")
 
                 # Send request using rnet
                 if method == "GET":
@@ -118,10 +105,10 @@ class RnetAddon:
                 # Log error
                 last_error = e
                 logger.warning(
-                    f"请求失败 (尝试 {retry_count + 1}/{max_retries + 1}): {e}"
+                    f"Request failed (attempt {retry_count + 1}/{max_retries + 1}): {e}"
                 )
 
-                # 仅在失败时更新代理
+                # Update proxy only on failure
                 self.proxy_interface.update()
                 await self._update_proxy(force=True)
 
