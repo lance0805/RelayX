@@ -25,17 +25,22 @@ class RnetAddon:
         self.proxy_interface = proxy_interface
         self.proxy = None
         self.proxy_updated = False
-        
+        self.timeout = 30.0  # 设置30秒超时
+
     async def initialize(self):
         if self.proxy_interface and not self.proxy:
             self.proxy = self.proxy_interface.get()
-            logger.info(f"Proxy initialized: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
+            logger.info(
+                f"Proxy initialized: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
+            )
             self.proxy_updated = True
 
     async def _update_proxy(self, force=False):
         if self.proxy_interface and (force or not self.proxy):
             self.proxy = self.proxy_interface.get()
-            logger.info(f"Proxy updated: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
+            logger.info(
+                f"Proxy updated: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
+            )
             self.proxy_updated = True
 
     async def request(self, flow: http.HTTPFlow) -> None:
@@ -53,13 +58,12 @@ class RnetAddon:
 
         while retry_count <= max_retries:
             try:
-                
                 # Configure proxy (if available)
                 proxy_url = f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
 
                 # Send request using rnet
                 if method == "GET":
-                    resp = await self.client.get(url, headers=headers, proxy=proxy_url)
+                    resp = await self.client.get(url, headers=headers, proxy=proxy_url, timeout=self.timeout)
                 elif method == "POST":
                     resp = await self.client.post(
                         url, headers=headers, data=body, proxy=proxy_url
@@ -105,7 +109,12 @@ class RnetAddon:
                     f"Request failed (attempt {retry_count + 1}/{max_retries + 1}): {e}"
                 )
 
-                # Update proxy only on failure
+                # Record failed proxy
+                if hasattr(self, 'failed_proxies') and self.proxy:
+                    proxy_id = f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
+                    self.failed_proxies.add(proxy_id)
+
+                # Update proxy
                 self.proxy_interface.update()
                 await self._update_proxy(force=True)
 
@@ -116,8 +125,9 @@ class RnetAddon:
                 if retry_count > max_retries:
                     break
 
-                # Short delay before retrying
-                await asyncio.sleep(0.5)
+                # Use exponential backoff strategy
+                delay = min(30, 0.5 * (2 ** retry_count))  # Maximum delay 30 seconds
+                await asyncio.sleep(delay)
 
         # All retries failed, return error response
         logger.error(
@@ -171,9 +181,9 @@ class HttpProxy:
         self.proxy_interface = ProxyInterface(
             autoRotate=True,
             autoUpdate=False,
-            maxProxies=100,
-            cachePeriod=24 * 60,
-            protocol="http",
+            maxProxies=30,
+            cachePeriod=60,
+            protocol="socks5",
             cacheFolderPath=cache_folder_path,
         )
 
