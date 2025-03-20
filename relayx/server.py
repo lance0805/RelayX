@@ -198,7 +198,9 @@ class HttpProxy:
             # Start proxy thread
             self.proxy_thread.__enter__()
 
-            logger.info(f"HTTP proxy server started on port {self.port}")
+            logger.info(
+                f"HTTP proxy server started on port {self.port} and bind {self.host}"
+            )
 
             # Keep main thread running until stop signal received
             stop_event = asyncio.Event()
