@@ -21,7 +21,7 @@ class RnetAddon:
     """mitmproxy addon for handling requests using rnet"""
 
     def __init__(self, proxy_interface: ProxyInterface = None):
-        self.client = Client(impersonate=Impersonate.Firefox136)
+        self.client = Client(impersonate=Impersonate.Chrome133)
         self.proxy_interface = proxy_interface
         self.proxy = None
         self.proxy_updated = False
