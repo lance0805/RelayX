@@ -1,7 +1,8 @@
 import asyncio
 import logging
+from pathlib import Path
 import threading
-from typing import Dict, Any, Self
+from typing import Dict, Any, Optional, Self
 
 from rnet import Client, Impersonate, Proxy
 from mitmproxy import http
@@ -165,7 +166,7 @@ class ThreadedMitmProxy(threading.Thread):
 
 
 class HttpProxy:
-    def __init__(self, port: int, host: str):
+    def __init__(self, port: int, host: str, cache_folder_path: Optional[Path] = None):
         self.port = port
         self.host = host
         self.proxy_thread = None
@@ -175,6 +176,7 @@ class HttpProxy:
             maxProxies=100,
             cachePeriod=24 * 60,
             protocol="socks5",
+            cacheFolderPath=cache_folder_path,
         )
 
         # Create rnet addon

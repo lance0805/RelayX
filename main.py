@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+from pathlib import Path
 from relayx.server import HttpProxy
 
 
@@ -27,6 +28,13 @@ def parse_args():
         default="0.0.0.0",
         help="Host to run the HTTP proxy server on (default: 0.0.0.0)",
     )
+    parser.add_argument(
+        "-c",
+        "--cache-folder",
+        type=str,
+        default="cache",
+        help="Path to the cache folder (default: cache)",
+    )
     return parser.parse_args()
 
 
@@ -38,7 +46,7 @@ async def main():
     logger.info(f"Starting RelayX HTTP proxy server on port {args.port}")
 
     try:
-        server = HttpProxy(args.port, args.bind)
+        server = HttpProxy(args.port, args.bind, cache_folder_path=Path(args.cache_folder))
         await server.start()
     except KeyboardInterrupt:
         logger.info("Server shutdown requested")
