@@ -165,9 +165,9 @@ class ThreadedMitmProxy(threading.Thread):
 
 
 class HttpProxy:
-    def __init__(self, port: int, config: Dict[str, Any]):
+    def __init__(self, port: int, host: str):
         self.port = port
-        self.config = config
+        self.host = host
         self.proxy_thread = None
         self.proxy_interface = ProxyInterface(
             autoRotate=True,
@@ -185,7 +185,7 @@ class HttpProxy:
         try:
             # Set mitmproxy options
             options = {
-                "listen_host": "0.0.0.0",
+                "listen_host": self.host,
                 "listen_port": self.port,
                 "http2": True,
                 "ssl_insecure": True,

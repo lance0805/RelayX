@@ -20,4 +20,6 @@ RUN uv sync --no-dev --frozen
 EXPOSE 8080
 
 # Run the application
-CMD ["uv", "run", "main.py"] 
+ENTRYPOINT ["uv", "run", "main.py"]
+
+CMD ["--host", "127.0.0.1"]
