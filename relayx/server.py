@@ -25,7 +25,7 @@ class RnetAddon:
         self.proxy_interface = proxy_interface
         self.proxy = None
         self.proxy_updated = False
-        self.timeout = 30.0  # 设置30秒超时
+        self.timeout = 30
 
     async def initialize(self):
         if self.proxy_interface and not self.proxy:
