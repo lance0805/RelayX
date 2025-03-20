@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 import threading
 from typing import Any, Optional, Self
+import time
 
 from rnet import Client, Impersonate
 from mitmproxy import http
@@ -56,8 +57,25 @@ class RnetAddon:
         headers = dict(flow.request.headers)
         body = flow.request.content if flow.request.content else b""
 
+        # 设置一个总体超时时间
+        start_time = time.time()
+        max_total_time = 300  # 2分钟总超时
+
         while retry_count <= max_retries:
+            # 检查客户端是否已断开连接
+            if flow.client_conn.closed:
+                logger.info(f"Client disconnected, aborting request to {url}")
+                return
+            
             try:
+                # 在重试循环中检查
+                if time.time() - start_time > max_total_time:
+                    logger.warning(f"Request to {url} exceeded maximum total time of {max_total_time}s, aborting")
+                    flow.response = http.Response.make(
+                        504, b"Request timeout", {"Content-Type": "text/plain"}
+                    )
+                    return
+
                 # Configure proxy (if available)
                 proxy_url = f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
 
@@ -98,8 +116,7 @@ class RnetAddon:
                 flow.response = http.Response.make(
                     int(str(resp.status_code)), content, dict(resp.headers.items())
                 )
-
-                # Successful return, exit retry loop
+                resp.close()
                 return
 
             except Exception as e:
@@ -109,12 +126,6 @@ class RnetAddon:
                     f"Request failed (attempt {retry_count + 1}/{max_retries + 1}): {e}"
                 )
 
-                # Record failed proxy
-                if hasattr(self, 'failed_proxies') and self.proxy:
-                    proxy_id = f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
-                    self.failed_proxies.add(proxy_id)
-
-                # Update proxy
                 self.proxy_interface.update()
                 await self._update_proxy(force=True)
 
@@ -126,8 +137,14 @@ class RnetAddon:
                     break
 
                 # Use exponential backoff strategy
-                delay = min(30, 0.5 * (2 ** retry_count))  # Maximum delay 30 seconds
+                delay = min(10, 0.5 * (2 ** retry_count))  # Maximum delay 10 seconds
                 await asyncio.sleep(delay)
+            finally:
+                if 'resp' in locals():
+                    try:
+                        await resp.close()
+                    except:
+                        pass
 
         # All retries failed, return error response
         logger.error(
