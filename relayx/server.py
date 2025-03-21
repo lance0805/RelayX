@@ -27,6 +27,7 @@ class RnetAddon:
         self.proxy = None
         self.proxy_updated = False
         self.timeout = 30
+        self.active_connections = {}  # 跟踪活动连接
 
     async def initialize(self):
         if self.proxy_interface and not self.proxy:
@@ -44,12 +45,26 @@ class RnetAddon:
             )
             self.proxy_updated = True
 
+    def clientconnect(self, layer):
+        """当客户端建立连接时调用"""
+        conn_id = id(layer)
+        self.active_connections[conn_id] = True
+        logger.info(f"Client connection established: {conn_id}")
+
+    def clientdisconnect(self, layer):
+        """当客户端断开连接时调用"""
+        conn_id = id(layer)
+        if conn_id in self.active_connections:
+            del self.active_connections[conn_id]
+            logger.info(f"Client connection closed: {conn_id}")
+
     async def request(self, flow: http.HTTPFlow) -> None:
         """Handle HTTP/HTTPS requests"""
         # Initialize retry counter
         retry_count = 0
         max_retries = 50
         last_error = None
+        conn_id = id(flow.client_conn)
 
         # Get request information
         method = flow.request.method
@@ -59,13 +74,28 @@ class RnetAddon:
 
         # 设置一个总体超时时间
         start_time = time.time()
-        max_total_time = 300  # 2分钟总超时
+        max_total_time = 300  # 5分钟总超时
 
         while retry_count <= max_retries:
+            # 检查连接是否已断开
+            if (
+                conn_id in self.active_connections
+                and not self.active_connections[conn_id]
+            ):
+                logger.warning(
+                    f"Client connection {conn_id} closed, aborting request to {url}"
+                )
+                flow.response = http.Response.make(
+                    499, b"Client closed request", {"Content-Type": "text/plain"}
+                )
+                return
+
             try:
-                # 在重试循环中检查
+                # 在重试循环中检查超时
                 if time.time() - start_time > max_total_time:
-                    logger.warning(f"Request to {url} exceeded maximum total time of {max_total_time}s, aborting")
+                    logger.warning(
+                        f"Request to {url} exceeded maximum total time of {max_total_time}s, aborting"
+                    )
                     flow.response = http.Response.make(
                         504, b"Request timeout", {"Content-Type": "text/plain"}
                     )
@@ -74,37 +104,14 @@ class RnetAddon:
                 # Configure proxy (if available)
                 proxy_url = f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
 
-                # Send request using rnet
-                if method == "GET":
-                    resp = await self.client.get(url, headers=headers, proxy=proxy_url, timeout=self.timeout)
-                elif method == "POST":
-                    resp = await self.client.post(
-                        url, headers=headers, data=body, proxy=proxy_url
-                    )
-                elif method == "PUT":
-                    resp = await self.client.put(
-                        url, headers=headers, data=body, proxy=proxy_url
-                    )
-                elif method == "DELETE":
-                    resp = await self.client.delete(
-                        url, headers=headers, proxy=proxy_url
-                    )
-                elif method == "HEAD":
-                    resp = await self.client.head(url, headers=headers, proxy=proxy_url)
-                elif method == "OPTIONS":
-                    resp = await self.client.options(
-                        url, headers=headers, proxy=proxy_url
-                    )
-                elif method == "PATCH":
-                    resp = await self.client.patch(
-                        url, headers=headers, data=body, proxy=proxy_url
-                    )
-                else:
-                    # Unsupported method
-                    flow.response = http.Response.make(
-                        501, b"Method not implemented", {"Content-Type": "text/plain"}
-                    )
-                    return
+                resp = await self.client.request(
+                    method,
+                    url,
+                    headers=headers,
+                    data=body,
+                    proxy=proxy_url,
+                    timeout=self.timeout,
+                )
 
                 # Request successful, set response and return
                 content = await resp.bytes()
@@ -115,6 +122,19 @@ class RnetAddon:
                 return
 
             except Exception as e:
+                # 再次检查连接是否已断开
+                if (
+                    conn_id in self.active_connections
+                    and not self.active_connections[conn_id]
+                ):
+                    logger.warning(
+                        f"Client connection {conn_id} closed during retry, aborting request to {url}"
+                    )
+                    flow.response = http.Response.make(
+                        499, b"Client closed request", {"Content-Type": "text/plain"}
+                    )
+                    return
+
                 # Log error
                 last_error = e
                 logger.warning(
@@ -132,10 +152,10 @@ class RnetAddon:
                     break
 
                 # Use exponential backoff strategy
-                delay = min(10, 0.5 * (2 ** retry_count))  # Maximum delay 10 seconds
+                delay = min(10, 0.5 * (2**retry_count))  # Maximum delay 10 seconds
                 await asyncio.sleep(delay)
             finally:
-                if 'resp' in locals():
+                if "resp" in locals():
                     try:
                         await resp.close()
                     except:
