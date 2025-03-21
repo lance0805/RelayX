@@ -49,10 +49,8 @@ class AioHttpAddon:
             )
 
             if self.session:
-                await self.session.close()
                 connector = ProxyConnector.from_url(f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
-                # 使用默认超时设置，在请求时指定超时
-                self.session = aiohttp.ClientSession(connector=connector)
+                self.session.connector = connector
             self.proxy_updated = True
 
     def client_connected(self, client):
