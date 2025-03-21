@@ -30,7 +30,7 @@ class RnetAddon:
         self.proxy_interface = proxy_interface
         self.proxy = None
         self.proxy_updated = False
-        self.timeout = 30
+        self.timeout = 60
         self.active_connections = {}  # 跟踪活动连接
 
     async def initialize(self):
@@ -76,7 +76,7 @@ class RnetAddon:
 
         # 设置一个总体超时时间
         start_time = time.time()
-        max_total_time = 120
+        max_total_time = 240
 
         while retry_count <= max_retries:
             # 检查连接是否已断开
