@@ -6,12 +6,13 @@ from typing import Any, Optional, Self
 import time
 import os
 
-from rnet import Client, Impersonate, Method, ImpersonateOS, Proxy
+import aiohttp
 from mitmproxy import http
 from mitmproxy.addons import default_addons, script
 from mitmproxy.master import Master
 from mitmproxy.options import Options
 
+from aiohttp_socks import ProxyType, ProxyConnector, ChainProxyConnector
 from swiftshadow.classes import ProxyInterface
 
 logger = logging.getLogger("relayx.server")
@@ -21,20 +22,16 @@ proxy_logger.setLevel(logging.WARNING)
 DEFAULT_COUNTRIES = ["US", "JP", "CA", "GB", "DE", "FR", "IT", "AU", "NZ", "CH", "SE", "NO", "DK", "FI", "NL", "SG", "KR", 
                       "TW", "CN", "HK", "MY", "TH", "AE", "IL", "IE"]
 
-class RnetAddon:
-    """mitmproxy addon for handling requests using rnet"""
+class AioHttpAddon:
+    """mitmproxy addon for handling requests using aiohttp"""
 
     def __init__(self, proxy_interface: ProxyInterface = None):
-        self.client = Client(
-            verify=False,
-            impersonate=Impersonate.Chrome101,
-            impersonate_os=ImpersonateOS.MacOS,
-        )
         self.proxy_interface = proxy_interface
         self.proxy = None
         self.proxy_updated = False
         self.timeout = 60
         self.active_connections = {}  # 跟踪活动连接
+        self.session = None
 
     async def initialize(self):
         if self.proxy_interface and not self.proxy:
@@ -43,13 +40,19 @@ class RnetAddon:
                 f"Proxy initialized: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
             )
             self.proxy_updated = True
-
+        
     async def _update_proxy(self, force=False):
         if self.proxy_interface and (force or not self.proxy):
             self.proxy = self.proxy_interface.get()
             logger.info(
                 f"Proxy updated: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
             )
+
+            if self.session:
+                await self.session.close()
+                connector = ProxyConnector.from_url(f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
+                # 使用默认超时设置，在请求时指定超时
+                self.session = aiohttp.ClientSession(connector=connector)
             self.proxy_updated = True
 
     def client_connected(self, client):
@@ -64,7 +67,7 @@ class RnetAddon:
             del self.active_connections[conn_id]
 
     async def request(self, flow: http.HTTPFlow) -> None:
-        """Handle HTTP/HTTPS requests"""
+        """Handle HTTP/HTTPS requests using aiohttp"""
         # Initialize retry counter
         retry_count = 0
         max_retries = 50
@@ -75,11 +78,14 @@ class RnetAddon:
         method = flow.request.method
         url = flow.request.url
         headers = dict(flow.request.headers)
-        body = flow.request.content if flow.request.content else b""
+        body = flow.request.content if flow.request.content else None
 
         # 设置一个总体超时时间
         start_time = time.time()
         max_total_time = 240
+        if not self.session:
+            connector = ProxyConnector.from_url(f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
+            self.session = aiohttp.ClientSession(connector=connector)
 
         while retry_count <= max_retries:
             # 检查连接是否已断开
@@ -105,26 +111,26 @@ class RnetAddon:
                         504, b"Request timeout", {"Content-Type": "text/plain"}
                     )
                     return
-
-                # Configure proxy (if available)
-                proxy_url = f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
-                rnet_method = getattr(Method, method.upper())
-                resp = await self.client.request(
-                    rnet_method,
-                    url,
+                # 发送请求
+                async with self.session.request(
+                    method=method,
+                    url=url,
+                    timeout=aiohttp.ClientTimeout(total=self.timeout),
                     headers=headers,
                     data=body,
-                    proxy=Proxy.all(url=proxy_url),
-                    timeout=self.timeout,
-                )
-
-                # Request successful, set response and return
-                content = await resp.bytes()
-                flow.response = http.Response.make(
-                    int(str(resp.status_code)), content, dict(resp.headers.items())
-                )
-                resp.close()
-                return
+                    allow_redirects=False,  # Let the client handle redirects
+                ) as resp:
+                    # 读取响应内容
+                    content = await resp.read()
+                    
+                    # 构建响应头
+                    resp_headers = dict(resp.headers)
+                    
+                    # 设置响应
+                    flow.response = http.Response.make(
+                        resp.status, content, resp_headers
+                    )
+                    return
 
             except Exception as e:
                 # 再次检查连接是否已断开
@@ -149,6 +155,7 @@ class RnetAddon:
                 self.proxy_interface.update()
                 await self._update_proxy(force=True)
 
+
                 # Increment retry counter
                 retry_count += 1
 
@@ -159,12 +166,6 @@ class RnetAddon:
                 # Use exponential backoff strategy
                 delay = min(10, 0.5 * (2**retry_count))  # Maximum delay 10 seconds
                 await asyncio.sleep(delay)
-            finally:
-                if "resp" in locals():
-                    try:
-                        await resp.close()
-                    except:
-                        pass
 
         # All retries failed, return error response
         logger.error(
@@ -175,6 +176,12 @@ class RnetAddon:
             f"Error after {max_retries + 1} attempts: {str(last_error)}".encode(),
             {"Content-Type": "text/plain"},
         )
+
+    async def done(self):
+        """在关闭时清理资源"""
+        if self.session:
+            await self.session.close()
+            self.session = None
 
 
 class ThreadedMitmProxy(threading.Thread):
@@ -230,8 +237,8 @@ class HttpProxy:
             countries=proxy_countries,
         )
 
-        # Create rnet addon
-        self.rnet_addon = RnetAddon(proxy_interface=self.proxy_interface)
+        # Create aiohttp addon
+        self.http_addon = AioHttpAddon(proxy_interface=self.proxy_interface)
 
     async def start(self):
         """Start mitmproxy proxy server"""
@@ -246,8 +253,8 @@ class HttpProxy:
 
             # Create and start threaded mitmproxy
             await self.proxy_interface.async_update()
-            await self.rnet_addon.initialize()
-            self.proxy_thread = ThreadedMitmProxy(self.rnet_addon, **options)
+            await self.http_addon.initialize()
+            self.proxy_thread = ThreadedMitmProxy(self.http_addon, **options)
 
             # Start proxy thread
             self.proxy_thread.__enter__()
