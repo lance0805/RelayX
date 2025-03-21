@@ -12,15 +12,41 @@ from mitmproxy.addons import default_addons, script
 from mitmproxy.master import Master
 from mitmproxy.options import Options
 
-from aiohttp_socks import ProxyType, ProxyConnector, ChainProxyConnector
+from aiohttp_socks import ProxyConnector
 from swiftshadow.classes import ProxyInterface
 
 logger = logging.getLogger("relayx.server")
 proxy_logger = logging.getLogger("mitmproxy.proxy.server")
 proxy_logger.setLevel(logging.WARNING)
 
-DEFAULT_COUNTRIES = ["US", "JP", "CA", "GB", "DE", "FR", "IT", "AU", "NZ", "CH", "SE", "NO", "DK", "FI", "NL", "SG", "KR", 
-                      "TW", "CN", "HK", "MY", "TH", "AE", "IL", "IE"]
+DEFAULT_COUNTRIES = [
+    "US",
+    "JP",
+    "CA",
+    "GB",
+    "DE",
+    "FR",
+    "IT",
+    "AU",
+    "NZ",
+    "CH",
+    "SE",
+    "NO",
+    "DK",
+    "FI",
+    "NL",
+    "SG",
+    "KR",
+    "TW",
+    "CN",
+    "HK",
+    "MY",
+    "TH",
+    "AE",
+    "IL",
+    "IE",
+]
+
 
 class AioHttpAddon:
     """mitmproxy addon for handling requests using aiohttp"""
@@ -31,7 +57,6 @@ class AioHttpAddon:
         self.proxy_updated = False
         self.timeout = 60
         self.active_connections = {}  # 跟踪活动连接
-        self.session = None
 
     async def initialize(self):
         if self.proxy_interface and not self.proxy:
@@ -40,21 +65,13 @@ class AioHttpAddon:
                 f"Proxy initialized: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
             )
             self.proxy_updated = True
-        
+
     async def _update_proxy(self, force=False):
         if self.proxy_interface and (force or not self.proxy):
             self.proxy = self.proxy_interface.get()
             logger.info(
                 f"Proxy updated: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
             )
-
-            # Close existing session and create a new one with the updated connector
-            if self.session:
-                old_session = self.session
-                connector = ProxyConnector.from_url(f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
-                self.session = aiohttp.ClientSession(connector=connector)
-                await old_session.close()
-                
             self.proxy_updated = True
 
     def client_connected(self, client):
@@ -85,9 +102,6 @@ class AioHttpAddon:
         # 设置一个总体超时时间
         start_time = time.time()
         max_total_time = 240
-        if not self.session:
-            connector = ProxyConnector.from_url(f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
-            self.session = aiohttp.ClientSession(connector=connector)
 
         while retry_count <= max_retries:
             # 检查连接是否已断开
@@ -114,20 +128,23 @@ class AioHttpAddon:
                     )
                     return
                 # 发送请求
-                async with self.session.request(
+                async with aiohttp.request(
                     method=method,
                     url=url,
                     timeout=aiohttp.ClientTimeout(total=self.timeout),
                     headers=headers,
                     data=body,
                     allow_redirects=False,  # Let the client handle redirects
+                    connector=ProxyConnector.from_url(
+                        f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
+                    ),
                 ) as resp:
                     # 读取响应内容
                     content = await resp.read()
-                    
+
                     # 构建响应头
                     resp_headers = dict(resp.headers)
-                    
+
                     # 设置响应
                     flow.response = http.Response.make(
                         resp.status, content, resp_headers
@@ -157,7 +174,6 @@ class AioHttpAddon:
                 self.proxy_interface.update()
                 await self._update_proxy(force=True)
 
-
                 # Increment retry counter
                 retry_count += 1
 
@@ -178,12 +194,6 @@ class AioHttpAddon:
             f"Error after {max_retries + 1} attempts: {str(last_error)}".encode(),
             {"Content-Type": "text/plain"},
         )
-
-    async def done(self):
-        """在关闭时清理资源"""
-        if self.session:
-            await self.session.close()
-            self.session = None
 
 
 class ThreadedMitmProxy(threading.Thread):
