@@ -32,8 +32,8 @@ def parse_args():
         "-c",
         "--cache-folder",
         type=Path,
-        default="/tmp/cache",
-        help="Path to the cache folder (default: cache)",
+        default=None,
+        help="Path to the cache folder (default: None, caching disabled)",
     )
     return parser.parse_args()
 
