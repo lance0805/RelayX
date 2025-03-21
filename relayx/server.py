@@ -55,7 +55,7 @@ class AioHttpAddon:
         self.proxy_interface = proxy_interface
         self.proxy = None
         self.proxy_updated = False
-        self.timeout = 60
+        self.timeout = 120
         self.active_connections = {}  # 跟踪活动连接
         self.connector = None  # Store the connector as an instance variable
 
