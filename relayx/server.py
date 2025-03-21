@@ -5,7 +5,7 @@ import threading
 from typing import Any, Optional, Self
 import time
 
-from rnet import Client, Impersonate
+from rnet import Client, Impersonate,Method
 from mitmproxy import http
 from mitmproxy.addons import default_addons, script
 from mitmproxy.master import Master
@@ -103,9 +103,9 @@ class RnetAddon:
 
                 # Configure proxy (if available)
                 proxy_url = f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
-
+                rnet_method = getattr(Method, method.upper())
                 resp = await self.client.request(
-                    method,
+                    rnet_method,
                     url,
                     headers=headers,
                     data=body,
