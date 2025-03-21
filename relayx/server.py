@@ -4,6 +4,7 @@ from pathlib import Path
 import threading
 from typing import Any, Optional, Self
 import time
+import os
 
 from rnet import Client, Impersonate, Method, ImpersonateOS, Proxy
 from mitmproxy import http
@@ -17,6 +18,8 @@ logger = logging.getLogger("relayx.server")
 proxy_logger = logging.getLogger("mitmproxy.proxy.server")
 proxy_logger.setLevel(logging.WARNING)
 
+DEFAULT_COUNTRIES = ["US", "JP", "CA", "GB", "DE", "FR", "IT", "AU", "NZ", "CH", "SE", "NO", "DK", "FI", "NL", "SG", "KR", 
+                      "TW", "CN", "HK", "MY", "TH", "AE", "IL", "IE"]
 
 class RnetAddon:
     """mitmproxy addon for handling requests using rnet"""
@@ -212,6 +215,11 @@ class HttpProxy:
         self.port = port
         self.host = host
         self.proxy_thread = None
+        proxy_countries = os.getenv("PROXY_COUNTRIES")
+        if proxy_countries:
+            proxy_countries = proxy_countries.split(",")
+        else:
+            proxy_countries = DEFAULT_COUNTRIES
         self.proxy_interface = ProxyInterface(
             autoRotate=True,
             autoUpdate=False,
@@ -219,8 +227,7 @@ class HttpProxy:
             cachePeriod=2 * 60,
             protocol="socks5",
             cacheFolderPath=cache_folder_path,
-            countries=["US", "JP", "CA", "GB", "DE", "FR", "IT", "AU", "NZ", "CH", "SE", "NO", "DK", "FI", "NL", "SG", "KR", 
-                      "TW", "CN", "HK", "MY", "TH", "AE", "IL", "IE"],
+            countries=proxy_countries,
         )
 
         # Create rnet addon
