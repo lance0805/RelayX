@@ -215,8 +215,8 @@ class HttpProxy:
         self.proxy_interface = ProxyInterface(
             autoRotate=True,
             autoUpdate=False,
-            maxProxies=30,
-            cachePeriod=60,
+            maxProxies=100,
+            cachePeriod=2 * 60,
             protocol="socks5",
             cacheFolderPath=cache_folder_path,
         )
