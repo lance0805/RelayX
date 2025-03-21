@@ -1,17 +1,14 @@
 import asyncio
 import logging
-from pathlib import Path
 import threading
+from pathlib import Path
 from typing import Any, Optional, Self
-import time
-import os
 
-from rnet import Client, Impersonate, Method, ImpersonateOS, Proxy
 from mitmproxy import http
 from mitmproxy.addons import default_addons, script
 from mitmproxy.master import Master
 from mitmproxy.options import Options
-
+from rnet import Client, Impersonate, ImpersonateOS, Method, Proxy
 from swiftshadow.classes import ProxyInterface
 
 logger = logging.getLogger("relayx.server")
@@ -30,147 +27,46 @@ class RnetAddon:
         )
         self.proxy_interface = proxy_interface
         self.proxy = None
-        self.proxy_updated = False
         self.timeout = 60
-        self.active_connections = {}  # 跟踪活动连接
-
-    async def initialize(self):
-        if self.proxy_interface and not self.proxy:
-            self.proxy = self.proxy_interface.get()
-            logger.info(
-                f"Proxy initialized: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
-            )
-            self.proxy_updated = True
-
-    async def _update_proxy(self, force=False):
-        if self.proxy_interface and (force or not self.proxy):
-            self.proxy = self.proxy_interface.get()
-            logger.info(
-                f"Proxy updated: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
-            )
-            self.proxy_updated = True
 
     def client_connected(self, client):
-        """当客户端建立连接时调用"""
-        conn_id = id(client)
-        self.active_connections[conn_id] = True
+        self.proxy = self.proxy_interface.get()
 
     def client_disconnected(self, client):
-        """当客户端断开连接时调用"""
-        conn_id = id(client)
-        if conn_id in self.active_connections:
-            del self.active_connections[conn_id]
+        pass
 
     async def request(self, flow: http.HTTPFlow) -> None:
         """Handle HTTP/HTTPS requests"""
-        # Initialize retry counter
-        retry_count = 0
-        max_retries = 50
-        last_error = None
-        conn_id = id(flow.client_conn)
-
         # Get request information
         method = flow.request.method
         url = flow.request.url
         headers = dict(flow.request.headers)
         body = flow.request.content if flow.request.content else b""
+        try:
+            proxy_url = f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
+            rnet_method = getattr(Method, method.upper())
+            resp = await self.client.request(
+                rnet_method,
+                url,
+                headers=headers,
+                data=body,
+                proxy=Proxy.all(url=proxy_url),
+                timeout=self.timeout,
+            )
 
-        # 设置一个总体超时时间
-        start_time = time.time()
-        max_total_time = 180
+            # Request successful, set response and return
+            content = await resp.bytes()
+            flow.response = http.Response.make(
+                int(str(resp.status_code)), content, dict(resp.headers.items())
+            )
+            resp.close()
+            return
 
-        while retry_count <= max_retries:
-            # 检查连接是否已断开
-            if (
-                conn_id in self.active_connections
-                and not self.active_connections[conn_id]
-            ):
-                logger.warning(
-                    f"Client connection {conn_id} closed, aborting request to {url}"
-                )
-                flow.response = http.Response.make(
-                    499, b"Client closed request", {"Content-Type": "text/plain"}
-                )
-                return
-
-            try:
-                # 在重试循环中检查超时
-                if time.time() - start_time > max_total_time:
-                    logger.warning(
-                        f"Request to {url} exceeded maximum total time of {max_total_time}s, aborting"
-                    )
-                    flow.response = http.Response.make(
-                        504, b"Request timeout", {"Content-Type": "text/plain"}
-                    )
-                    return
-
-                # Configure proxy (if available)
-                proxy_url = f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
-                rnet_method = getattr(Method, method.upper())
-                resp = await self.client.request(
-                    rnet_method,
-                    url,
-                    headers=headers,
-                    data=body,
-                    proxy=Proxy.all(url=proxy_url),
-                    timeout=self.timeout,
-                )
-
-                # Request successful, set response and return
-                content = await resp.bytes()
-                flow.response = http.Response.make(
-                    int(str(resp.status_code)), content, dict(resp.headers.items())
-                )
-                resp.close()
-                return
-
-            except Exception as e:
-                # 再次检查连接是否已断开
-                if (
-                    conn_id in self.active_connections
-                    and not self.active_connections[conn_id]
-                ):
-                    logger.warning(
-                        f"Client connection {conn_id} closed during retry, aborting request to {url}"
-                    )
-                    flow.response = http.Response.make(
-                        499, b"Client closed request", {"Content-Type": "text/plain"}
-                    )
-                    return
-
-                # Log error
-                last_error = e
-                logger.warning(
-                    f"Request failed (attempt {retry_count + 1}/{max_retries + 1}): {e}"
-                )
-
-                self.proxy_interface.update()
-                await self._update_proxy(force=True)
-
-                # Increment retry counter
-                retry_count += 1
-
-                # If maximum retries reached, exit loop
-                if retry_count > max_retries:
-                    break
-
-                # Use exponential backoff strategy
-                delay = min(10, 0.5 * (2**retry_count))  # Maximum delay 10 seconds
-                await asyncio.sleep(delay)
-            finally:
-                if "resp" in locals():
-                    try:
-                        await resp.close()
-                    except:
-                        pass
-
-        # All retries failed, return error response
-        logger.error(
-            f"All {max_retries + 1} attempts failed for {url}. Last error: {last_error}"
-        )
+        except Exception as e:
+            logger.warning(f"Request to {url} failed: {e}")
         flow.response = http.Response.make(
             502,
-            f"Error after {max_retries + 1} attempts: {str(last_error)}".encode(),
+            "Gateway Error".encode(),
             {"Content-Type": "text/plain"},
         )
 
@@ -213,7 +109,7 @@ class HttpProxy:
         self.port = port
         self.host = host
         self.proxy_thread = None
-       
+
         self.proxy_interface = ProxyInterface(
             autoRotate=True,
             autoUpdate=False,
@@ -239,7 +135,6 @@ class HttpProxy:
 
             # Create and start threaded mitmproxy
             await self.proxy_interface.async_update()
-            await self.rnet_addon.initialize()
             self.proxy_thread = ThreadedMitmProxy(self.rnet_addon, **options)
 
             # Start proxy thread
