@@ -48,9 +48,13 @@ class AioHttpAddon:
                 f"Proxy updated: {self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
             )
 
+            # Close existing session and create a new one with the updated connector
             if self.session:
+                old_session = self.session
                 connector = ProxyConnector.from_url(f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}")
-                self.session.connector = connector
+                self.session = aiohttp.ClientSession(connector=connector)
+                await old_session.close()
+                
             self.proxy_updated = True
 
     def client_connected(self, client):
