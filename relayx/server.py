@@ -219,6 +219,8 @@ class HttpProxy:
             cachePeriod=2 * 60,
             protocol="socks5",
             cacheFolderPath=cache_folder_path,
+            countries=["US", "JP", "CA", "GB", "DE", "FR", "IT", "AU", "NZ", "CH", "SE", "NO", "DK", "FI", "NL", "SG", "KR", 
+                      "TW", "CN", "HK", "MY", "TH", "AE", "IL", "IE"],
         )
 
         # Create rnet addon
