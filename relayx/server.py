@@ -24,9 +24,10 @@ class RnetAddon:
             verify=False,
         )
         self.proxy_interface = proxy_interface
-        self.proxies = {}  # Dictionary to store session -> proxy mappings
+        self.proxies = {}
         self.timeout = 60
-        self.session_header = "X-Browser-Session-ID"  # Custom header name
+        self.session_header = "X-Browser-Session-ID"
+        self.proxy_lock = asyncio.Lock()
 
     async def request(self, flow: http.HTTPFlow) -> None:
         """Handle HTTP/HTTPS requests"""
@@ -66,10 +67,11 @@ class RnetAddon:
             )
             return
 
-        # Get or create proxy for this session
-        if session_id not in self.proxies and self.proxy_interface:
-            logger.info(f"Assigning new proxy for session {session_id}")
-            self.proxies[session_id] = self.proxy_interface.get()
+        # Use lock for thread-safe proxy assignment
+        async with self.proxy_lock:
+            if session_id not in self.proxies and self.proxy_interface:
+                logger.info(f"Assigning new proxy for session {session_id}")
+                self.proxies[session_id] = self.proxy_interface.get()
 
         current_proxy = self.proxies.get(session_id)
         if not current_proxy:
