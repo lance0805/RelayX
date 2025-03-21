@@ -26,14 +26,9 @@ class RnetAddon:
             impersonate_os=ImpersonateOS.MacOS,
         )
         self.proxy_interface = proxy_interface
-        self.proxy = None
+        self.proxies = {}  # Dictionary to store session -> proxy mappings
         self.timeout = 60
-
-    def client_connected(self, client):
-        self.proxy = self.proxy_interface.get()
-
-    def client_disconnected(self, client):
-        pass
+        self.session_header = "X-Browser-Session-ID"  # Custom header name
 
     async def request(self, flow: http.HTTPFlow) -> None:
         """Handle HTTP/HTTPS requests"""
@@ -42,8 +37,34 @@ class RnetAddon:
         url = flow.request.url
         headers = dict(flow.request.headers)
         body = flow.request.content if flow.request.content else b""
+
+        # Extract session ID from custom header
+        session_id = headers.get(self.session_header)
+
+        if not session_id:
+            # Fallback if header is not present
+            logger.warning(f"Request missing {self.session_header} header")
+            session_id = f"default-{id(flow.client_conn)}"
+
+        # Get or create proxy for this session
+        if session_id not in self.proxies and self.proxy_interface:
+            logger.info(f"Assigning new proxy for session {session_id}")
+            self.proxies[session_id] = self.proxy_interface.get()
+
+        current_proxy = self.proxies.get(session_id)
+        if not current_proxy:
+            # Fallback if we somehow don't have a proxy
+            flow.response = http.Response.make(
+                502,
+                "No proxy available".encode(),
+                {"Content-Type": "text/plain"},
+            )
+            return
+
         try:
-            proxy_url = f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
+            proxy_url = (
+                f"{current_proxy.protocol}://{current_proxy.ip}:{current_proxy.port}"
+            )
             rnet_method = getattr(Method, method.upper())
             resp = await self.client.request(
                 rnet_method,
@@ -69,6 +90,11 @@ class RnetAddon:
             "Gateway Error".encode(),
             {"Content-Type": "text/plain"},
         )
+
+    # Optional: Clean up method to remove unused sessions
+    def cleanup_sessions(self, max_age=3600):  # 1 hour by default
+        """Remove sessions that haven't been used for a while"""
+        # Implementation would depend on if you want to track session activity times
 
 
 class ThreadedMitmProxy(threading.Thread):
