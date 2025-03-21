@@ -49,14 +49,12 @@ class RnetAddon:
         """当客户端建立连接时调用"""
         conn_id = id(client)
         self.active_connections[conn_id] = True
-        logger.info(f"Client connection established: {conn_id}")
 
     def client_disconnected(self, client):
         """当客户端断开连接时调用"""
         conn_id = id(client)
         if conn_id in self.active_connections:
             del self.active_connections[conn_id]
-            logger.info(f"Client connection closed: {conn_id}")
 
     async def request(self, flow: http.HTTPFlow) -> None:
         """Handle HTTP/HTTPS requests"""
@@ -74,7 +72,7 @@ class RnetAddon:
 
         # 设置一个总体超时时间
         start_time = time.time()
-        max_total_time = 300  # 5分钟总超时
+        max_total_time = 120
 
         while retry_count <= max_retries:
             # 检查连接是否已断开
