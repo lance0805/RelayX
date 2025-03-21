@@ -45,15 +45,15 @@ class RnetAddon:
             )
             self.proxy_updated = True
 
-    def clientconnect(self, layer):
+    def client_connected(self, client):
         """当客户端建立连接时调用"""
-        conn_id = id(layer)
+        conn_id = id(client)
         self.active_connections[conn_id] = True
         logger.info(f"Client connection established: {conn_id}")
 
-    def clientdisconnect(self, layer):
+    def client_disconnected(self, client):
         """当客户端断开连接时调用"""
-        conn_id = id(layer)
+        conn_id = id(client)
         if conn_id in self.active_connections:
             del self.active_connections[conn_id]
             logger.info(f"Client connection closed: {conn_id}")
