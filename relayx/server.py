@@ -8,7 +8,7 @@ from mitmproxy import http
 from mitmproxy.addons import default_addons, script
 from mitmproxy.master import Master
 from mitmproxy.options import Options
-from rnet import Client, Impersonate, ImpersonateOS, Method, Proxy
+from rnet import Client, Method, Proxy
 from swiftshadow.classes import ProxyInterface
 
 logger = logging.getLogger("relayx.server")
@@ -22,8 +22,6 @@ class RnetAddon:
     def __init__(self, proxy_interface: ProxyInterface = None):
         self.client = Client(
             verify=False,
-            impersonate=Impersonate.Chrome101,
-            impersonate_os=ImpersonateOS.MacOS,
         )
         self.proxy_interface = proxy_interface
         self.proxies = {}  # Dictionary to store session -> proxy mappings
@@ -38,13 +36,35 @@ class RnetAddon:
         headers = dict(flow.request.headers)
         body = flow.request.content if flow.request.content else b""
 
-        # Extract session ID from custom header
-        session_id = headers.get(self.session_header)
+        # Extract session ID from User-Agent
+        ua_key = "User-Agent"
+        user_agent = headers.get(ua_key, "")
+        if not user_agent:
+            ua_key = "user-agent"
+            user_agent = headers.get(ua_key, "")
+        session_id = None
+
+        # Look for "SessionID/" pattern in User-Agent
+        if "SessionID/" in user_agent:
+            try:
+                # Split by "SessionID/" to get parts before and after
+                ua_parts = user_agent.split("SessionID/")
+                base_ua = ua_parts[0].strip()
+                session_id = ua_parts[1].strip()
+
+                # Clean the User-Agent by removing the SessionID part
+                headers[ua_key] = base_ua.rstrip()
+            except (IndexError, AttributeError):
+                session_id = None
 
         if not session_id:
-            # Fallback if header is not present
-            logger.warning(f"Request missing {self.session_header} header")
-            session_id = f"default-{id(flow.client_conn)}"
+            logger.warning(f"Request missing SessionID in User-Agent: {url}")
+            flow.response = http.Response.make(
+                502,
+                "Missing SessionID in User-Agent".encode(),
+                {"Content-Type": "text/plain"},
+            )
+            return
 
         # Get or create proxy for this session
         if session_id not in self.proxies and self.proxy_interface:
