@@ -19,34 +19,6 @@ logger = logging.getLogger("relayx.server")
 proxy_logger = logging.getLogger("mitmproxy.proxy.server")
 proxy_logger.setLevel(logging.WARNING)
 
-DEFAULT_COUNTRIES = [
-    "US",
-    "JP",
-    "CA",
-    "GB",
-    "DE",
-    "FR",
-    "IT",
-    "AU",
-    "NZ",
-    "CH",
-    "SE",
-    "NO",
-    "DK",
-    "FI",
-    "NL",
-    "SG",
-    "KR",
-    "TW",
-    "CN",
-    "HK",
-    "MY",
-    "TH",
-    "AE",
-    "IL",
-    "IE",
-]
-
 
 class AioHttpAddon:
     """mitmproxy addon for handling requests using aiohttp"""
@@ -134,13 +106,13 @@ class AioHttpAddon:
                     # Close previous connector if it exists
                     if self.connector is not None:
                         await self.connector.close()
-                    
+
                     # Create new connector
                     self.connector = ProxyConnector.from_url(
                         f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
                     )
                     self.proxy_updated = False
-                
+
                 # Use the stored connector
                 async with aiohttp.request(
                     method=method,
@@ -252,11 +224,6 @@ class HttpProxy:
         self.port = port
         self.host = host
         self.proxy_thread = None
-        proxy_countries = os.getenv("PROXY_COUNTRIES")
-        if proxy_countries:
-            proxy_countries = proxy_countries.split(",")
-        else:
-            proxy_countries = DEFAULT_COUNTRIES
         self.proxy_interface = ProxyInterface(
             autoRotate=True,
             autoUpdate=False,
@@ -264,7 +231,6 @@ class HttpProxy:
             cachePeriod=2 * 60,
             protocol="socks5",
             cacheFolderPath=cache_folder_path,
-            countries=proxy_countries,
         )
 
         # Create aiohttp addon
