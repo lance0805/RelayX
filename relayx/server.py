@@ -57,6 +57,7 @@ class AioHttpAddon:
         self.proxy_updated = False
         self.timeout = 60
         self.active_connections = {}  # 跟踪活动连接
+        self.connector = None  # Store the connector as an instance variable
 
     async def initialize(self):
         if self.proxy_interface and not self.proxy:
@@ -127,7 +128,20 @@ class AioHttpAddon:
                         504, b"Request timeout", {"Content-Type": "text/plain"}
                     )
                     return
-                # 发送请求
+
+                # Create a connector if needed or if proxy has been updated
+                if self.connector is None or self.proxy_updated:
+                    # Close previous connector if it exists
+                    if self.connector is not None:
+                        await self.connector.close()
+                    
+                    # Create new connector
+                    self.connector = ProxyConnector.from_url(
+                        f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
+                    )
+                    self.proxy_updated = False
+                
+                # Use the stored connector
                 async with aiohttp.request(
                     method=method,
                     url=url,
@@ -135,9 +149,7 @@ class AioHttpAddon:
                     headers=headers,
                     data=body,
                     allow_redirects=False,  # Let the client handle redirects
-                    connector=ProxyConnector.from_url(
-                        f"{self.proxy.protocol}://{self.proxy.ip}:{self.proxy.port}"
-                    ),
+                    connector=self.connector,
                 ) as resp:
                     # 读取响应内容
                     content = await resp.read()
@@ -194,6 +206,12 @@ class AioHttpAddon:
             f"Error after {max_retries + 1} attempts: {str(last_error)}".encode(),
             {"Content-Type": "text/plain"},
         )
+
+    # Add a cleanup method to close the connector
+    async def shutdown(self):
+        if self.connector:
+            await self.connector.close()
+            self.connector = None
 
 
 class ThreadedMitmProxy(threading.Thread):
