@@ -106,7 +106,7 @@ class RnetAddon:
             return
 
         except Exception as e:
-            logger.warning(f"Request to {url} failed: {e}")
+            logger.warning(f"Request to {url} with proxy {proxy_url} failed: {e}")
         flow.response = http.Response.make(
             502,
             "Gateway Error".encode(),
