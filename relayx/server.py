@@ -5,7 +5,7 @@ import threading
 from typing import Any, Optional, Self
 import time
 
-from rnet import Client, Impersonate, Method, ImpersonateOS
+from rnet import Client, Impersonate, Method, ImpersonateOS, Proxy
 from mitmproxy import http
 from mitmproxy.addons import default_addons, script
 from mitmproxy.master import Master
@@ -24,7 +24,7 @@ class RnetAddon:
     def __init__(self, proxy_interface: ProxyInterface = None):
         self.client = Client(
             verify=False,
-            impersonate=Impersonate.Chrome133,
+            impersonate=Impersonate.Chrome101,
             impersonate_os=ImpersonateOS.MacOS,
         )
         self.proxy_interface = proxy_interface
@@ -111,7 +111,7 @@ class RnetAddon:
                     url,
                     headers=headers,
                     data=body,
-                    proxy=proxy_url,
+                    proxy=Proxy.all(url=proxy_url),
                     timeout=self.timeout,
                 )
 
